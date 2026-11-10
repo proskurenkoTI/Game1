@@ -52,3 +52,51 @@ export function playTone(
   oscillator.start(start);
   oscillator.stop(start + duration);
 }
+
+// --- Игровые сигналы: готовые последовательности тонов ---
+
+export function playWaveStart(): void {
+  playTone(440, 0.12, 'sine');
+  playTone(660, 0.15, 'sine', 0.15, 0.12);
+}
+
+/** Звук-предупреждение: появился монстр-обманка. */
+export function playTrapWarning(): void {
+  playTone(200, 0.15, 'square', 0.1);
+}
+
+export function playKill(): void {
+  playTone(660, 0.12, 'sine');
+}
+
+export function playCombo(): void {
+  playTone(880, 0.15, 'sine', 0.15, 0.1);
+}
+
+/** Потеря жизни: обманка или монстр дошёл до базы. */
+export function playDamage(): void {
+  playTone(150, 0.3, 'sawtooth');
+}
+
+/** Опечатка. */
+export function playTypo(): void {
+  playTone(220, 0.1, 'square', 0.1);
+}
+
+export function playPause(): void {
+  playTone(392, 0.1, 'sine', 0.12);
+}
+
+export function playResume(): void {
+  playTone(523, 0.1, 'sine', 0.12);
+}
+
+export function playVictory(): void {
+  playTone(523, 0.15, 'sine');
+  playTone(659, 0.15, 'sine', 0.15, 0.15);
+  playTone(784, 0.22, 'sine', 0.15, 0.3);
+}
+
+export function playDefeat(): void {
+  playTone(200, 0.3, 'sawtooth');
+}
