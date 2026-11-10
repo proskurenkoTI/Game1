@@ -74,8 +74,9 @@ export class GameScene extends Phaser.Scene {
   private waveSpawned = 0;
   private waveResolved = 0;
   private spawnCooldown = 0;
-  private firstTrapTriggered = false;
   private gameOver = false;
+
+  private endScreen: Phaser.GameObjects.Container | null = null;
 
   private waveText!: Phaser.GameObjects.Text;
   private remainingText!: Phaser.GameObjects.Text;
@@ -450,14 +451,9 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.flash(180, 255, 60, 60);
     playTone(150, 0.3, 'sawtooth');
 
-    if (!this.firstTrapTriggered) {
-      this.firstTrapTriggered = true; // обучающая обманка — без урона
-      this.showFloatingText(monster.x, monster.y, 'Обманка! Без урона', '#fbbf24');
-    } else {
-      this.lives -= 1;
-      this.updateHud();
-      this.showFloatingText(monster.x, monster.y, 'Обманка! −1 жизнь', '#f87171');
-    }
+    this.lives -= 1;
+    this.updateHud();
+    this.showFloatingText(monster.x, monster.y, 'Обманка! −1 жизнь', '#f87171');
 
     this.removeMonster(monster);
 
@@ -475,12 +471,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   private monsterReachedBase(monster: Monster): void {
-    this.lives -= 1;
-    this.combo = 0;
     if (this.typed && monster.word.startsWith(this.typed)) {
       this.typed = '';
       this.updateInputLine();
     }
+
+    // Обманку печатать нельзя, поэтому и урона от неё нет.
+    if (monster.isTrap) {
+      this.showFloatingText(monster.x, BASE_Y - 20, 'Обманка прошла', '#94a3b8');
+      this.removeMonster(monster);
+      return;
+    }
+
+    this.lives -= 1;
+    this.combo = 0;
     this.updateHud();
 
     this.cameras.main.flash(180, 255, 60, 60);
@@ -557,56 +561,57 @@ export class GameScene extends Phaser.Scene {
   private showEndScreen(reason: 'win' | 'lose'): void {
     const { width, height } = this.scale;
 
-    const overlay = this.add
-      .rectangle(width / 2, height / 2, width, height, 0x0f172a, 0.88)
-      .setDepth(50)
-      .setInteractive();
-
     const title = reason === 'win' ? 'Победа!' : 'Игра окончена';
     const subtitle = reason === 'win' ? 'Все волны пройдены!' : 'Монстры добрались до базы.';
 
-    this.add
+    // Весь экран конца игры держим в одном контейнере, чтобы одним вызовом
+    // удалить его при рестарте.
+    const endScreen = this.add.container(0, 0).setDepth(50);
+
+    const overlay = this.add
+      .rectangle(width / 2, height / 2, width, height, 0x0f172a, 0.88)
+      .setInteractive();
+
+    const titleText = this.add
       .text(width / 2, height / 2 - 100, title, {
         fontFamily: 'system-ui, sans-serif',
         fontSize: '44px',
         color: '#fbbf24',
         fontStyle: 'bold',
       })
-      .setOrigin(0.5)
-      .setDepth(51);
+      .setOrigin(0.5);
 
-    this.add
+    const subtitleText = this.add
       .text(width / 2, height / 2 - 40, subtitle, {
         fontFamily: 'system-ui, sans-serif',
         fontSize: '20px',
         color: '#cbd5e1',
       })
-      .setOrigin(0.5)
-      .setDepth(51);
+      .setOrigin(0.5);
 
-    this.add
+    const scoreText = this.add
       .text(width / 2, height / 2 + 10, `Счёт: ${this.score}`, {
         fontFamily: 'system-ui, sans-serif',
         fontSize: '28px',
         color: '#f8fafc',
         fontStyle: 'bold',
       })
-      .setOrigin(0.5)
-      .setDepth(51);
+      .setOrigin(0.5);
 
-    this.add
+    const bestText = this.add
       .text(width / 2, height / 2 + 52, `Лучший: ${bestScore}`, {
         fontFamily: 'system-ui, sans-serif',
         fontSize: '20px',
         color: '#94a3b8',
       })
-      .setOrigin(0.5)
-      .setDepth(51);
+      .setOrigin(0.5);
 
-    const button = this.add.container(width / 2, height / 2 + 130).setDepth(51);
-    const buttonBg = this.add.rectangle(0, 0, 200, 56, 0x3b82f6).setInteractive({
-      useHandCursor: true,
-    });
+    const button = this.add.container(width / 2, height / 2 + 130);
+    const buttonBg = this.add
+      .rectangle(0, 0, 200, 56, 0x3b82f6)
+      .setInteractive({
+        useHandCursor: true,
+      });
     const buttonLabel = this.add
       .text(0, 0, 'Ещё', {
         fontFamily: 'system-ui, sans-serif',
@@ -617,10 +622,34 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5);
     button.add([buttonBg, buttonLabel]);
 
-    buttonBg.on('pointerdown', () => this.scene.restart());
+    // Порядок имеет значение: overlay рисуется первым (под остальным),
+    // а кнопка — последней (поверх него), поэтому получит клик.
+    endScreen.add([overlay, titleText, subtitleText, scoreText, bestText, button]);
+    this.endScreen = endScreen;
+
+    buttonBg.on('pointerdown', () => this.resetAndRestart());
     buttonBg.on('pointerover', () =>
       this.tweens.add({ targets: button, scale: 1.06, duration: 100 }),
     );
     buttonBg.on('pointerout', () => this.tweens.add({ targets: button, scale: 1, duration: 100 }));
+  }
+
+  private resetAndRestart(): void {
+    // Уничтожить экран конца игры (оверлей, кнопки и т.д.)
+    this.endScreen?.destroy();
+    this.endScreen = null;
+
+    // Уничтожить оставшихся монстров, чтобы не двигались
+    for (const monster of this.monsters) {
+      monster.container.destroy();
+    }
+    this.monsters = [];
+
+    // Сбросить счёт и состояние
+    this.gameOver = false;
+    this.score = 0;
+    this.lives = START_LIVES;
+    this.combo = 0;
+    this.startWave(1);
   }
 }
