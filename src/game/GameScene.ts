@@ -1,374 +1,165 @@
 import Phaser from 'phaser';
-import { randomWord } from './words';
-import { playTone } from './sound';
-
-// --- Параметры игры ---
-const START_LIVES = 3;
-const SCORE_WORD = 10;
-const SCORE_SPEED = 5; // бонус за слово, набранное быстрее 2 секунд
-const SPEED_BONUS_MS = 2000;
-const SCORE_COMBO = 15; // разовый бонус за серию
-const COMBO_STREAK = 3;
-
-const MONSTER_SPAWN_Y = 100;
-const BASE_Y = 520; // монстр дошёл до базы
-const SPAWN_COOLDOWN_MS = 900;
-const MONSTER_EMOJIS = ['👾', '🧟', '👻', '🦇', '👽', '💀', '🕷️', '🐍', '🐙'];
-
-interface WaveConfig {
-  totalMonsters: number;
-  maxConcurrent: number;
-  minWordLen: number;
-  maxWordLen: number;
-  trapChance: number;
-  speed: number;
-}
-
-const WAVES: WaveConfig[] = [
-  { totalMonsters: 5, maxConcurrent: 1, minWordLen: 3, maxWordLen: 4, trapChance: 0, speed: 40 },
-  { totalMonsters: 6, maxConcurrent: 2, minWordLen: 4, maxWordLen: 5, trapChance: 0.15, speed: 50 },
-  { totalMonsters: 7, maxConcurrent: 3, minWordLen: 5, maxWordLen: 6, trapChance: 0.2, speed: 60 },
-  { totalMonsters: 8, maxConcurrent: 3, minWordLen: 6, maxWordLen: 8, trapChance: 0.2, speed: 75 },
-  { totalMonsters: 9, maxConcurrent: 4, minWordLen: 6, maxWordLen: 8, trapChance: 0.3, speed: 85 },
-];
-
-function getWaveConfig(wave: number): WaveConfig {
-  if (wave <= WAVES.length) return WAVES[wave - 1];
-  // Бесконечный режим после волны 5: сложность продолжает расти.
-  const extra = wave - WAVES.length;
-  return {
-    totalMonsters: 9 + extra * 2,
-    maxConcurrent: Math.min(4 + extra, 6),
-    minWordLen: 6,
-    maxWordLen: Math.min(8 + extra, 10),
-    trapChance: Math.min(0.3 + extra * 0.05, 0.5),
-    speed: 85 + extra * 10,
-  };
-}
-
-interface Monster {
-  word: string;
-  isTrap: boolean;
-  x: number;
-  y: number;
-  speed: number;
-  container: Phaser.GameObjects.Container;
-  wordText: Phaser.GameObjects.Text;
-  firstTypedAt: number | null;
-}
-
-let bestScore = 0; // лучший счёт за сессию
+import { BASE_Y, FINAL_WAVE, START_LIVES } from './gameConfig';
+import {
+  createMonster,
+  destroyMonster,
+  findByPrefix,
+  matchesTyped,
+  refreshWord,
+  shiftTypingStartedAt,
+  stepMonster,
+  type Monster,
+} from './monsters';
+import { getBestScore, rememberBestScore, ScoreKeeper } from './scoring';
+import { createBase } from './stage';
+import {
+  playCombo,
+  playDamage,
+  playDefeat,
+  playKill,
+  playPause,
+  playResume,
+  playTrapWarning,
+  playTypo,
+  playVictory,
+  playWaveStart,
+} from './sound';
+import { Hud, type HudSnapshot } from './hud';
+import { TypingInput } from './typingInput';
+import { Feedback } from './feedback';
+import { EndScreen, type EndReason } from './endScreen';
+import { PauseScreen } from './pauseScreen';
+import { WaveRunner } from './waves';
+import { TEXT_COLORS } from './theme';
 
 /**
- * «Печатай и стреляй»: монстры ползут к базе, над каждым — слово.
- * Печатаешь слово — монстр умирает. Обманки печатать нельзя.
+ * Сцена «Печатай и стреляй»: монстры ползут к базе, над каждым — слово.
+ * Печатаешь слово — монстр умрёт. Обманки печатать нельзя. Esc — пауза.
+ *
+ * Логика разбита по модулям:
+ *  gameConfig  — параметры баланса и волны
+ *  scoring     — очки, комбо, лучший счёт
+ *  monsters    — создание, движение, подсветка, удаление монстров
+ *  waves       — прогресс волны и условия спавна
+ *  hud         — тексты на экране (волна, счёт, жизни, осталось)
+ *  typingInput — строка ввода и разбор клавиш
+ *  feedback    — всплывающие очки, баннер волны, вспышки камеры
+ *  stage       — декорации (линия базы)
+ *  pauseScreen — экран паузы
+ *  endScreen   — экран победы / поражения
+ *  sound       — синтезированные сигналы
  */
 export class GameScene extends Phaser.Scene {
   private monsters: Monster[] = [];
-  private typed = '';
-  private score = 0;
   private lives = START_LIVES;
-  private combo = 0;
-  private wave = 1;
-  private waveConfig = WAVES[0];
-  private waveSpawned = 0;
-  private waveResolved = 0;
-  private spawnCooldown = 0;
   private gameOver = false;
 
-  private endScreen: Phaser.GameObjects.Container | null = null;
+  /** Пауза замораживает спавн, движение и набор слова. */
+  private paused = false;
+  private pausedAt = 0;
 
-  private waveText!: Phaser.GameObjects.Text;
-  private remainingText!: Phaser.GameObjects.Text;
-  private livesText!: Phaser.GameObjects.Text;
-  private scoreText!: Phaser.GameObjects.Text;
-  private inputText!: Phaser.GameObjects.Text;
-  private cursorText!: Phaser.GameObjects.Text;
+  private scoreKeeper = new ScoreKeeper();
+  private waveRunner = new WaveRunner();
+  private hud!: Hud;
+  private typing!: TypingInput;
+  private feedback!: Feedback;
+  private endScreen: EndScreen | null = null;
+  private pauseScreen: PauseScreen | null = null;
 
   constructor() {
     super('GameScene');
   }
 
+  // ── Жизненный цикл сцены ──────────────────────────────────────────
+
   create(): void {
-    const { width } = this.scale;
+    this.hud = new Hud(this, { onPause: () => this.togglePause() });
+    this.feedback = new Feedback(this);
+    this.typing = new TypingInput(this);
+    this.typing.onChange = () => this.refreshAllWords();
+    createBase(this);
+    this.setupInput();
+    this.startWave(1);
+  }
 
-    this.createHud();
-    this.createBase();
-    this.createInputLine();
-
-    this.add
-      .text(
-        width / 2,
-        88,
-        'Печатай слово — монстр умрёт. Мигающие слова — обманки, не печатай!',
-        {
-          fontFamily: 'system-ui, sans-serif',
-          fontSize: '14px',
-          color: '#64748b',
-        },
-      )
-      .setOrigin(0.5, 0);
-
+  private setupInput(): void {
     if (!this.input.keyboard) {
       throw new Error('Keyboard input is unavailable.');
     }
     this.input.keyboard.on('keydown', (event: KeyboardEvent) => this.onKeyDown(event));
-
-    this.startWave(1);
   }
 
   update(_time: number, delta: number): void {
+    if (this.gameOver || this.paused) return;
+    if (this.waveRunner.tick(delta, this.monsters.length)) {
+      this.spawnMonster();
+    }
+    this.stepMonsters(delta);
+  }
+
+  // ── Пауза ─────────────────────────────────────────────────────────
+
+  private togglePause(): void {
     if (this.gameOver) return;
-
-    this.updateSpawn(delta);
-    this.updateMonsters(delta);
-  }
-
-  // --- HUD ---
-
-  private createHud(): void {
-    const { width } = this.scale;
-
-    this.waveText = this.add
-      .text(24, 20, 'Волна 1', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '24px',
-        color: '#e2e8f0',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0, 0);
-
-    this.remainingText = this.add
-      .text(24, 56, 'Осталось: 5', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '18px',
-        color: '#94a3b8',
-      })
-      .setOrigin(0, 0);
-
-    this.livesText = this.add
-      .text(width / 2, 20, '❤'.repeat(START_LIVES), {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '24px',
-      })
-      .setOrigin(0.5, 0);
-
-    this.scoreText = this.add
-      .text(width - 24, 20, 'Счёт: 0', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '24px',
-        color: '#e2e8f0',
-        fontStyle: 'bold',
-      })
-      .setOrigin(1, 0);
-  }
-
-  private updateHud(): void {
-    this.scoreText.setText(`Счёт: ${this.score}`);
-    this.livesText.setText(
-      '❤'.repeat(Math.max(0, this.lives)) + '🖤'.repeat(Math.max(0, START_LIVES - this.lives)),
-    );
-    this.remainingText.setText(
-      `Осталось: ${Math.max(0, this.waveConfig.totalMonsters - this.waveResolved)}`,
-    );
-  }
-
-  // --- База и строка ввода ---
-
-  private createBase(): void {
-    const { width } = this.scale;
-    this.add.rectangle(width / 2, BASE_Y, width - 40, 2, 0x334155);
-    this.add
-      .text(width / 2, 545, '🏠 БАЗА', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '26px',
-      })
-      .setOrigin(0.5);
-  }
-
-  private createInputLine(): void {
-    const { width } = this.scale;
-
-    this.add.rectangle(width / 2, 590, width - 40, 44, 0x1e293b).setStrokeStyle(1, 0x334155);
-
-    this.inputText = this.add
-      .text(28, 590, '> ', {
-        fontFamily: 'monospace',
-        fontSize: '24px',
-        color: '#e2e8f0',
-      })
-      .setOrigin(0, 0.5);
-
-    this.cursorText = this.add
-      .text(28 + this.inputText.width, 590, '|', {
-        fontFamily: 'monospace',
-        fontSize: '24px',
-        color: '#fbbf24',
-      })
-      .setOrigin(0, 0.5);
-
-    this.tweens.add({
-      targets: this.cursorText,
-      alpha: 0,
-      duration: 500,
-      yoyo: true,
-      repeat: -1,
-    });
-  }
-
-  private updateInputLine(): void {
-    this.inputText.setText(`> ${this.typed}`);
-    this.cursorText.setX(this.inputText.x + this.inputText.width + 2);
-    this.updateMonsterWords();
-  }
-
-  // --- Волны ---
-
-  private startWave(wave: number): void {
-    this.wave = wave;
-    this.waveConfig = getWaveConfig(wave);
-    this.waveSpawned = 0;
-    this.waveResolved = 0;
-    this.spawnCooldown = 600;
-    this.typed = '';
-
-    this.waveText.setText(`Волна ${wave}`);
-    this.updateHud();
-    this.updateInputLine();
-
-    this.showWaveBanner(`Волна ${wave}`);
-    playTone(440, 0.12, 'sine');
-    playTone(660, 0.15, 'sine', 0.15, 0.12);
-  }
-
-  private showWaveBanner(text: string): void {
-    const { width, height } = this.scale;
-    const banner = this.add
-      .text(width / 2, height / 2 - 60, text, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '40px',
-        color: '#fbbf24',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5)
-      .setDepth(10);
-
-    this.tweens.add({
-      targets: banner,
-      alpha: 0,
-      y: height / 2 - 100,
-      duration: 1200,
-      delay: 600,
-      onComplete: () => banner.destroy(),
-    });
-  }
-
-  // --- Спавн и движение ---
-
-  private updateSpawn(delta: number): void {
-    this.spawnCooldown -= delta;
-    if (this.spawnCooldown > 0) return;
-    if (this.waveSpawned >= this.waveConfig.totalMonsters) return;
-    if (this.monsters.length >= this.waveConfig.maxConcurrent) return;
-
-    this.spawnCooldown = SPAWN_COOLDOWN_MS;
-    this.spawnMonster();
-  }
-
-  private spawnMonster(): void {
-    const { width } = this.scale;
-    const isTrap = Math.random() < this.waveConfig.trapChance;
-    const activeWords = this.monsters.map((monster) => monster.word);
-    const word = randomWord(this.waveConfig.minWordLen, this.waveConfig.maxWordLen, activeWords);
-    const x = Phaser.Math.Between(80, width - 80);
-    const speed = this.waveConfig.speed * Phaser.Math.FloatBetween(0.9, 1.1);
-
-    const container = this.add.container(x, MONSTER_SPAWN_Y);
-    const emoji = this.add
-      .text(0, 0, MONSTER_EMOJIS[Math.floor(Math.random() * MONSTER_EMOJIS.length)], {
-        fontSize: '40px',
-      })
-      .setOrigin(0.5);
-    const wordText = this.add
-      .text(0, -44, word, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '20px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-    container.add([emoji, wordText]);
-
-    if (isTrap) {
-      wordText.setFontStyle('bold italic');
-      wordText.setColor('#fca5a5');
-      emoji.setTint(0xffb3b3);
-      this.tweens.add({
-        targets: wordText,
-        alpha: 0.3,
-        duration: 300,
-        yoyo: true,
-        repeat: -1,
-      });
-      playTone(200, 0.15, 'square', 0.1); // звук-предупреждение
-    }
-
-    this.monsters.push({
-      word,
-      isTrap,
-      x,
-      y: MONSTER_SPAWN_Y,
-      speed,
-      container,
-      wordText,
-      firstTypedAt: null,
-    });
-
-    this.waveSpawned += 1;
-  }
-
-  private updateMonsters(delta: number): void {
-    const reached: Monster[] = [];
-    for (const monster of this.monsters) {
-      monster.y += (monster.speed * delta) / 1000;
-      monster.container.y = monster.y;
-      if (monster.y >= BASE_Y) reached.push(monster);
-    }
-    for (const monster of reached) {
-      this.monsterReachedBase(monster);
+    if (this.paused) {
+      this.resume();
+    } else {
+      this.pause();
     }
   }
 
-  // --- Ввод ---
+  private pause(): void {
+    this.paused = true;
+    this.pausedAt = this.time.now;
+    this.pauseScreen = new PauseScreen(this, () => this.resume());
+    playPause();
+  }
+
+  private resume(): void {
+    if (!this.paused) return;
+
+    // Игровое время шло и во время паузы, поэтому сдвигаем момент начала
+    // набора, чтобы отдых не съедал бонус за скорость слова.
+    shiftTypingStartedAt(this.monsters, this.time.now - this.pausedAt);
+    this.closePause();
+    playResume();
+  }
+
+  /** Снимает флаг и экран паузы, время набора не трогает. */
+  private closePause(): void {
+    this.paused = false;
+    this.pauseScreen?.destroy();
+    this.pauseScreen = null;
+  }
+
+  // ── Ввод ──────────────────────────────────────────────────────────
 
   private onKeyDown(event: KeyboardEvent): void {
     if (this.gameOver) return;
 
-    const key = event.key;
+    const action = this.typing.readAction(event);
+    if (!action) return;
 
-    if (key === 'Backspace') {
-      event.preventDefault();
-      this.typed = this.typed.slice(0, -1);
-      this.updateInputLine();
+    if (action.kind === 'pause') {
+      this.togglePause();
       return;
     }
-    if (key === 'Enter' || key === 'Escape') {
-      event.preventDefault();
-      this.typed = '';
-      this.updateInputLine();
+
+    // На паузе набор слова недоступен; Esc на экране паузы её снимает.
+    if (this.paused) return;
+
+    if (action.kind === 'backspace') {
+      this.typing.setValue(this.typing.value.slice(0, -1));
       return;
     }
-    if (key.length !== 1) return;
+    if (action.kind === 'clear') {
+      this.typing.clear();
+      return;
+    }
 
-    const char = key.toLowerCase();
-    if (!/^[a-zа-я0-9]$/.test(char)) return;
-    event.preventDefault();
-
-    const newTyped = this.typed + char;
-
-    // Обманка: начали печатать её слово — взрыв.
-    const trap = this.findMonsterByPrefix(newTyped, true);
-    const normal = this.findMonsterByPrefix(newTyped, false);
+    const attempt = this.typing.value + action.char;
+    const trap = findByPrefix(this.monsters, attempt, true);
+    const normal = findByPrefix(this.monsters, attempt, false);
 
     if (trap && !normal) {
       this.triggerTrap(trap);
@@ -376,121 +167,86 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (normal) {
-      this.typed = newTyped;
-      if (normal.firstTypedAt === null) {
-        normal.firstTypedAt = this.time.now;
-      }
-      this.updateInputLine();
-      if (this.typed === normal.word) {
+      this.typing.setValue(attempt);
+      if (normal.firstTypedAt === null) normal.firstTypedAt = this.time.now;
+      if (attempt === normal.word) {
         this.killMonster(normal);
       }
       return;
     }
 
-    // Ошибка: буква не подходит ни одному слову.
     this.wrongLetter();
   }
 
-  private findMonsterByPrefix(prefix: string, isTrap: boolean): Monster | undefined {
-    return this.monsters.find(
-      (monster) => monster.isTrap === isTrap && monster.word.startsWith(prefix),
-    );
+  // ── Монстры ───────────────────────────────────────────────────────
+
+  private spawnMonster(): void {
+    const monster = createMonster(this, this.waveRunner.config, this.monsters.map(m => m.word));
+    if (monster.isTrap) playTrapWarning();
+    this.monsters.push(monster);
+    this.waveRunner.onSpawned();
   }
 
-  private updateMonsterWords(): void {
-    for (const monster of this.monsters) {
-      if (this.typed && monster.word.startsWith(this.typed)) {
-        monster.wordText.setText(monster.word.slice(this.typed.length));
-        monster.wordText.setColor('#fbbf24');
-      } else {
-        monster.wordText.setText(monster.word);
-        monster.wordText.setColor(monster.isTrap ? '#fca5a5' : '#ffffff');
-      }
+  private stepMonsters(delta: number): void {
+    const reached: Monster[] = [];
+    for (const m of this.monsters) {
+      stepMonster(m, delta);
+      if (m.y >= BASE_Y) reached.push(m);
     }
+    for (const m of reached) this.monsterReachedBase(m);
   }
-
-  // --- Результаты ---
 
   private killMonster(monster: Monster): void {
-    const now = this.time.now;
-    let points = SCORE_WORD;
-    if (monster.firstTypedAt !== null && now - monster.firstTypedAt < SPEED_BONUS_MS) {
-      points += SCORE_SPEED;
-    }
-
-    this.score += points;
-    this.combo += 1;
-
-    let comboBonus = 0;
-    if (this.combo >= COMBO_STREAK) {
-      comboBonus = SCORE_COMBO;
-      this.score += comboBonus;
-      this.combo = 0;
-    }
-
-    this.typed = '';
-    this.updateHud();
-    this.updateInputLine();
-    this.showFloatingText(
+    const award = this.scoreKeeper.awardWord(this.time.now, monster.firstTypedAt);
+    this.feedback.floatingText(
       monster.x,
       monster.y,
-      `+${points}${comboBonus > 0 ? `  комбо +${comboBonus}` : ''}`,
-      '#4ade80',
+      `+${award.points}${award.comboBonus > 0 ? `  комбо +${award.comboBonus}` : ''}`,
+      TEXT_COLORS.success,
     );
-    playTone(660, 0.12, 'sine');
-    if (comboBonus > 0) playTone(880, 0.15, 'sine', 0.15, 0.1);
+    playKill();
+    if (award.comboBonus > 0) playCombo();
 
+    this.typing.clear();
     this.removeMonster(monster);
   }
 
   private triggerTrap(monster: Monster): void {
-    this.typed = '';
-    this.combo = 0;
-    this.updateInputLine();
-
-    this.cameras.main.flash(180, 255, 60, 60);
-    playTone(150, 0.3, 'sawtooth');
-
+    this.scoreKeeper.breakCombo();
+    this.typing.clear();
+    this.feedback.dangerFlash();
+    playDamage();
+    this.feedback.floatingText(monster.x, monster.y, 'Обманка! −1 жизнь', TEXT_COLORS.danger);
     this.lives -= 1;
-    this.updateHud();
-    this.showFloatingText(monster.x, monster.y, 'Обманка! −1 жизнь', '#f87171');
-
     this.removeMonster(monster);
-
     if (this.lives <= 0) {
       this.endGame('lose');
     }
   }
 
   private wrongLetter(): void {
-    this.typed = '';
-    this.combo = 0;
-    this.updateInputLine();
-    this.cameras.main.flash(80, 255, 200, 200);
-    playTone(220, 0.1, 'square', 0.1);
+    this.scoreKeeper.breakCombo();
+    this.typing.clear();
+    this.feedback.errorFlash();
+    playTypo();
   }
 
   private monsterReachedBase(monster: Monster): void {
-    if (this.typed && monster.word.startsWith(this.typed)) {
-      this.typed = '';
-      this.updateInputLine();
+    if (matchesTyped(monster, this.typing.value)) {
+      this.typing.clear();
     }
 
-    // Обманку печатать нельзя, поэтому и урона от неё нет.
     if (monster.isTrap) {
-      this.showFloatingText(monster.x, BASE_Y - 20, 'Обманка прошла', '#94a3b8');
+      this.feedback.floatingText(monster.x, BASE_Y - 20, 'Обманка прошла', TEXT_COLORS.muted);
       this.removeMonster(monster);
       return;
     }
 
+    this.scoreKeeper.breakCombo();
     this.lives -= 1;
-    this.combo = 0;
-    this.updateHud();
-
-    this.cameras.main.flash(180, 255, 60, 60);
-    playTone(150, 0.3, 'sawtooth');
-    this.showFloatingText(monster.x, BASE_Y - 20, '−1 жизнь', '#f87171');
-
+    this.feedback.dangerFlash();
+    playDamage();
+    this.feedback.floatingText(monster.x, BASE_Y - 20, '−1 жизнь', TEXT_COLORS.danger);
     this.removeMonster(monster);
 
     if (this.lives <= 0) {
@@ -499,157 +255,82 @@ export class GameScene extends Phaser.Scene {
   }
 
   private removeMonster(monster: Monster): void {
-    this.monsters = this.monsters.filter((item) => item !== monster);
-    this.waveResolved += 1;
-    monster.container.destroy();
-    this.updateHud();
+    this.monsters = this.monsters.filter(m => m !== monster);
+    destroyMonster(monster);
+    this.waveRunner.onResolved();
+    this.hud.update(this.takeSnapshot());
     this.checkWaveEnd();
+  }
+
+  // ── Волны ─────────────────────────────────────────────────────────
+
+  private startWave(wave: number): void {
+    this.waveRunner.start(wave);
+    this.typing.clear();
+    this.hud.update(this.takeSnapshot());
+    this.feedback.waveBanner(`Волна ${wave}`);
+    playWaveStart();
+  }
+
+  /** Полный сброс партии: вызывается кнопкой «Ещё» на экране итогов. */
+  private resetAndRestart(): void {
+    this.endScreen?.destroy();
+    this.endScreen = null;
+    this.closePause();
+
+    for (const monster of this.monsters) {
+      destroyMonster(monster);
+    }
+    this.monsters = [];
+
+    this.gameOver = false;
+    this.scoreKeeper.reset();
+    this.lives = START_LIVES;
+    this.startWave(1);
   }
 
   private checkWaveEnd(): void {
     if (this.gameOver) return;
     if (this.lives <= 0) return;
-    if (this.waveSpawned < this.waveConfig.totalMonsters) return;
-    if (this.monsters.length > 0) return;
+    if (!this.waveRunner.isFinished(this.monsters.length)) return;
 
-    if (this.wave >= 5) {
+    if (this.waveRunner.wave >= FINAL_WAVE) {
       this.endGame('win');
     } else {
-      this.startWave(this.wave + 1);
+      this.startWave(this.waveRunner.wave + 1);
     }
   }
 
-  private showFloatingText(x: number, y: number, text: string, color: string): void {
-    const label = this.add
-      .text(x, y, text, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '20px',
-        color,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5)
-      .setDepth(30);
+  // ── Конец игры ────────────────────────────────────────────────────
 
-    this.tweens.add({
-      targets: label,
-      y: y - 50,
-      alpha: 0,
-      duration: 700,
-      onComplete: () => label.destroy(),
+  private endGame(reason: EndReason): void {
+    if (this.gameOver) return;
+    this.gameOver = true;
+    this.closePause();
+    rememberBestScore(this.scoreKeeper.score);
+    if (reason === 'win') playVictory();
+    else playDefeat();
+    this.endScreen = new EndScreen(this, {
+      reason,
+      score: this.scoreKeeper.score,
+      bestScore: getBestScore(),
+      onRestart: () => this.resetAndRestart(),
     });
   }
 
-  // --- Конец игры ---
+  // ── Вспомогательные ───────────────────────────────────────────────
 
-  private endGame(reason: 'win' | 'lose'): void {
-    if (this.gameOver) return;
-    this.gameOver = true;
-
-    bestScore = Math.max(bestScore, this.score);
-
-    if (reason === 'win') {
-      playTone(523, 0.15, 'sine');
-      playTone(659, 0.15, 'sine', 0.15, 0.15);
-      playTone(784, 0.22, 'sine', 0.15, 0.3);
-    } else {
-      playTone(200, 0.3, 'sawtooth');
-    }
-
-    this.showEndScreen(reason);
+  private refreshAllWords(): void {
+    const typed = this.typing.value;
+    for (const m of this.monsters) refreshWord(m, typed);
   }
 
-  private showEndScreen(reason: 'win' | 'lose'): void {
-    const { width, height } = this.scale;
-
-    const title = reason === 'win' ? 'Победа!' : 'Игра окончена';
-    const subtitle = reason === 'win' ? 'Все волны пройдены!' : 'Монстры добрались до базы.';
-
-    // Весь экран конца игры держим в одном контейнере, чтобы одним вызовом
-    // удалить его при рестарте.
-    const endScreen = this.add.container(0, 0).setDepth(50);
-
-    const overlay = this.add
-      .rectangle(width / 2, height / 2, width, height, 0x0f172a, 0.88)
-      .setInteractive();
-
-    const titleText = this.add
-      .text(width / 2, height / 2 - 100, title, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '44px',
-        color: '#fbbf24',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-
-    const subtitleText = this.add
-      .text(width / 2, height / 2 - 40, subtitle, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '20px',
-        color: '#cbd5e1',
-      })
-      .setOrigin(0.5);
-
-    const scoreText = this.add
-      .text(width / 2, height / 2 + 10, `Счёт: ${this.score}`, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '28px',
-        color: '#f8fafc',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-
-    const bestText = this.add
-      .text(width / 2, height / 2 + 52, `Лучший: ${bestScore}`, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '20px',
-        color: '#94a3b8',
-      })
-      .setOrigin(0.5);
-
-    const button = this.add.container(width / 2, height / 2 + 130);
-    const buttonBg = this.add
-      .rectangle(0, 0, 200, 56, 0x3b82f6)
-      .setInteractive({
-        useHandCursor: true,
-      });
-    const buttonLabel = this.add
-      .text(0, 0, 'Ещё', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '22px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-    button.add([buttonBg, buttonLabel]);
-
-    // Порядок имеет значение: overlay рисуется первым (под остальным),
-    // а кнопка — последней (поверх него), поэтому получит клик.
-    endScreen.add([overlay, titleText, subtitleText, scoreText, bestText, button]);
-    this.endScreen = endScreen;
-
-    buttonBg.on('pointerdown', () => this.resetAndRestart());
-    buttonBg.on('pointerover', () =>
-      this.tweens.add({ targets: button, scale: 1.06, duration: 100 }),
-    );
-    buttonBg.on('pointerout', () => this.tweens.add({ targets: button, scale: 1, duration: 100 }));
-  }
-
-  private resetAndRestart(): void {
-    // Уничтожить экран конца игры (оверлей, кнопки и т.д.)
-    this.endScreen?.destroy();
-    this.endScreen = null;
-
-    // Уничтожить оставшихся монстров, чтобы не двигались
-    for (const monster of this.monsters) {
-      monster.container.destroy();
-    }
-    this.monsters = [];
-
-    // Сбросить счёт и состояние
-    this.gameOver = false;
-    this.score = 0;
-    this.lives = START_LIVES;
-    this.combo = 0;
-    this.startWave(1);
+  private takeSnapshot(): HudSnapshot {
+    return {
+      wave: this.waveRunner.wave,
+      remaining: this.waveRunner.remaining(),
+      lives: this.lives,
+      score: this.scoreKeeper.score,
+    };
   }
 }
