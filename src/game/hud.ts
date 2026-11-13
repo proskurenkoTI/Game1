@@ -6,7 +6,7 @@ import Phaser from 'phaser';
 import { START_LIVES } from './gameConfig';
 import { INPUT_LINE_Y } from './typingInput';
 import { TEXT_COLORS, uiText } from './theme';
-import { createButton, createPlaceholderButton } from './uiButton';
+import { createButton } from './uiButton';
 
 export interface HudSnapshot {
   wave: number;
@@ -17,6 +17,7 @@ export interface HudSnapshot {
 
 export interface HudOptions {
   onPause: () => void;
+  onHome: () => void;
 }
 
 const HINT_TEXT = 'Печатай слово — монстр умрёт. Мигающие слова — обманки, не печатай!';
@@ -35,7 +36,7 @@ const BUTTON_SIZE = 48;
 const BUTTON_Y = 44;
 const BUTTON_GAP = 12;
 
-const SETTINGS_LABEL = '⚙';
+const HOME_LABEL = '🏠';
 const PAUSE_LABEL = '❙❙';
 
 export class Hud {
@@ -50,11 +51,12 @@ export class Hud {
 
     // ── Левая сторона: кнопки ──────────────────────────────────────
 
-    // Кнопка настроек — заглушка, не кликабельна.
-    createPlaceholderButton(scene, SIDE_MARGIN, BUTTON_Y, {
-      label: SETTINGS_LABEL,
+    // Кнопка «Домой» — выход в главное меню.
+    createButton(scene, SIDE_MARGIN, BUTTON_Y, {
+      label: HOME_LABEL,
       width: BUTTON_SIZE,
       height: BUTTON_SIZE,
+      onPress: options.onHome,
     }).setDepth(HUD_DEPTH);
 
     // Кнопка паузы — кликабельна, вызывает togglePause.
@@ -78,7 +80,7 @@ export class Hud {
       .setDepth(HUD_DEPTH);
 
     this.livesText = scene.add
-      .text(rightX, RIGHT_TEXT_Y[2], HEART_FULL.repeat(START_LIVES), uiText('24px', TEXT_COLORS.white))
+      .text(rightX, RIGHT_TEXT_Y[2], HEART_FULL.repeat(START_LIVES), uiText('24px', TEXT_COLORS.onField))
       .setOrigin(1, 0)
       .setDepth(HUD_DEPTH);
 

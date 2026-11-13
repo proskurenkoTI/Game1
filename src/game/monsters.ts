@@ -39,7 +39,7 @@ export function createMonster(
     })
     .setOrigin(0.5);
   const wordText = scene.add
-    .text(0, -44, word, uiText('20px', TEXT_COLORS.white, true))
+    .text(0, -44, word, uiText('20px', TEXT_COLORS.onField, true))
     .setOrigin(0.5);
   container.add([emoji, wordText]);
 
@@ -96,7 +96,7 @@ export function refreshWord(monster: Monster, typed: string): void {
     monster.wordText.setColor(TEXT_COLORS.accent);
   } else {
     monster.wordText.setText(monster.word);
-    monster.wordText.setColor(monster.isTrap ? TEXT_COLORS.trap : TEXT_COLORS.white);
+    monster.wordText.setColor(monster.isTrap ? TEXT_COLORS.trap : TEXT_COLORS.onField);
   }
 }
 
