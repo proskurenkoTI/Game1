@@ -39,7 +39,7 @@ export function createButton(
     .setInteractive({ useHandCursor: true });
 
   const label = scene.add
-    .text(0, 0, options.label, uiText(options.fontSize ?? '22px', TEXT_COLORS.white, true))
+    .text(0, 0, options.label, uiText(options.fontSize ?? '22px', TEXT_COLORS.onButton, true))
     .setOrigin(0.5);
 
   button.add([background, label]);
@@ -72,7 +72,7 @@ export function createPlaceholderButton(
     .setAlpha(PLACEHOLDER_FILL_ALPHA);
 
   const label = scene.add
-    .text(0, 0, options.label, uiText(options.fontSize ?? '22px', TEXT_COLORS.white, true))
+    .text(0, 0, options.label, uiText(options.fontSize ?? '22px', TEXT_COLORS.onButton, true))
     .setOrigin(0.5)
     .setAlpha(PLACEHOLDER_FILL_ALPHA);
 

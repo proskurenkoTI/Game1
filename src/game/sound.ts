@@ -5,6 +5,17 @@
 
 let audioContext: AudioContext | null = null;
 
+/** Общий выключатель всех игровых звуков. По умолчанию звук включён. */
+let soundEnabled = true;
+
+export function isSoundEnabled(): boolean {
+  return soundEnabled;
+}
+
+export function setSoundEnabled(enabled: boolean): void {
+  soundEnabled = enabled;
+}
+
 function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
   if (!audioContext) {
@@ -21,7 +32,7 @@ function getAudioContext(): AudioContext | null {
 }
 
 /**
- * Проигрывает один тон.
+ * Проигрывает один тон, если звук не выключен в настройках.
  * @param frequency частота в Гц
  * @param duration длительность в секундах
  * @param type форма волны
@@ -35,6 +46,8 @@ export function playTone(
   volume = 0.15,
   delay = 0,
 ): void {
+  if (!soundEnabled) return;
+
   const ctx = getAudioContext();
   if (!ctx) return;
 

@@ -30,7 +30,7 @@ import { Feedback } from './feedback';
 import { EndScreen, type EndReason } from './endScreen';
 import { PauseScreen } from './pauseScreen';
 import { WaveRunner } from './waves';
-import { TEXT_COLORS } from './theme';
+import { TEXT_COLORS, applyCanvasTheme } from './theme';
 
 /**
  * Сцена «Печатай и стреляй»: монстры ползут к базе, над каждым — слово.
@@ -72,8 +72,28 @@ export class GameScene extends Phaser.Scene {
 
   // ── Жизненный цикл сцены ──────────────────────────────────────────
 
+  /**
+   * Phaser вызывает init() перед каждым запуском сцены — и при первом
+   * старте из меню, и при рестарте. Инициализаторы полей конструктора
+   * повторно не отрабатывают, поэтому состояние партии сбрасываем здесь.
+   */
+  init(): void {
+    this.monsters = [];
+    this.lives = START_LIVES;
+    this.gameOver = false;
+    this.paused = false;
+    this.pausedAt = 0;
+    this.scoreKeeper.reset();
+    this.endScreen = null;
+    this.pauseScreen = null;
+  }
+
   create(): void {
-    this.hud = new Hud(this, { onPause: () => this.togglePause() });
+    applyCanvasTheme(this);
+    this.hud = new Hud(this, {
+      onPause: () => this.togglePause(),
+      onHome: () => this.goToMenu(),
+    });
     this.feedback = new Feedback(this);
     this.typing = new TypingInput(this);
     this.typing.onChange = () => this.refreshAllWords();
@@ -274,19 +294,12 @@ export class GameScene extends Phaser.Scene {
 
   /** Полный сброс партии: вызывается кнопкой «Ещё» на экране итогов. */
   private resetAndRestart(): void {
-    this.endScreen?.destroy();
-    this.endScreen = null;
-    this.closePause();
+    this.scene.restart();
+  }
 
-    for (const monster of this.monsters) {
-      destroyMonster(monster);
-    }
-    this.monsters = [];
-
-    this.gameOver = false;
-    this.scoreKeeper.reset();
-    this.lives = START_LIVES;
-    this.startWave(1);
+  /** Возврат в главное меню кнопкой «Домой» на HUD. */
+  private goToMenu(): void {
+    this.scene.start('MenuScene');
   }
 
   private checkWaveEnd(): void {
