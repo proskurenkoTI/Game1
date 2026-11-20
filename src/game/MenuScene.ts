@@ -1,24 +1,28 @@
 /**
- * Главное меню: заголовок, подсказка и две кнопки.
- * Игра отсюда не запускается сама — ждём нажатия «Играть».
+ * Главное меню: выбор режима игры и кнопка настроек.
+ * Игра отсюда не запускается сама — ждём нажатия на режим.
  */
 import Phaser from 'phaser';
 import { TEXT_COLORS, applyCanvasTheme, uiText } from './theme';
-import { createButton } from './uiButton';
+import { createButton, createPlaceholderButton } from './uiButton';
 
 const TITLE = 'Печатай и стреляй';
-const HINT = 'Печатай слово над монстром — он умрёт.\nМигающие слова — обманки, их печатать нельзя!';
+const HINT = 'Печатай слово — монстр умрёт. Мигающие слова — обманки, не печатай!';
 
-const PLAY_LABEL = 'Играть';
+const MODE_DEFENSE = '🏰 Оборона базы';
+const MODE_ALPHABET = '🔤 Азбука · скоро';
+const MODE_JUMP = '🍄 Буквопрыг · скоро';
+
 const SETTINGS_LABEL = 'Настройки';
 
-const TITLE_Y = 200;
-const HINT_Y = 280;
-const FIRST_BUTTON_Y = 380;
+const TITLE_Y = 150;
+const HINT_Y = 210;
+const FIRST_MODE_Y = 280;
+const SETTINGS_Y = 510;
 
-const BUTTON_WIDTH = 240;
+const BUTTON_WIDTH = 280;
 const BUTTON_HEIGHT = 56;
-const BUTTON_GAP = 20;
+const MODE_BUTTON_GAP = 14;
 
 export class MenuScene extends Phaser.Scene {
   constructor() {
@@ -40,14 +44,33 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setAlign('center');
 
-    createButton(this, centerX, FIRST_BUTTON_Y, {
-      label: PLAY_LABEL,
+    // «Оборона базы» — реализованный режим, текущая GameScene.
+    createButton(this, centerX, FIRST_MODE_Y, {
+      label: MODE_DEFENSE,
       width: BUTTON_WIDTH,
       height: BUTTON_HEIGHT,
       onPress: () => this.startGame(),
     });
 
-    createButton(this, centerX, FIRST_BUTTON_Y + BUTTON_HEIGHT + BUTTON_GAP, {
+    // Режимы-заглушки: выглядят как кнопки, но не кликабельны.
+    createPlaceholderButton(this, centerX, FIRST_MODE_Y + BUTTON_HEIGHT + MODE_BUTTON_GAP, {
+      label: MODE_ALPHABET,
+      width: BUTTON_WIDTH,
+      height: BUTTON_HEIGHT,
+    });
+
+    createPlaceholderButton(
+      this,
+      centerX,
+      FIRST_MODE_Y + 2 * (BUTTON_HEIGHT + MODE_BUTTON_GAP),
+      {
+        label: MODE_JUMP,
+        width: BUTTON_WIDTH,
+        height: BUTTON_HEIGHT,
+      },
+    );
+
+    createButton(this, centerX, SETTINGS_Y, {
       label: SETTINGS_LABEL,
       width: BUTTON_WIDTH,
       height: BUTTON_HEIGHT,
