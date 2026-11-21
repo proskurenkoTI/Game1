@@ -2,13 +2,32 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#111827" />
     <title>Печатай и стреляй</title>
   </head>
   <body>
     <main id="app">
       <div id="game"></div>
+      <!--
+        Скрытый полем input: на телефоне браузер не отдаёт keydown, пока
+        фокус не стоит на текстовом поле. Через него и приходит ввод с
+        встроенной клавиатуры (см. mobileInput.ts).
+      -->
+      <input
+        id="keyboard-capture"
+        type="text"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        aria-hidden="true"
+        tabindex="-1"
+      />
+      <div id="rotate-hint" class="rotate-hint" hidden>
+        <span class="rotate-hint__icon">📱</span>
+        <p>Поверните телефон горизонтально — так игра занимает весь экран.</p>
+      </div>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
