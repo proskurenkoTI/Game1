@@ -328,6 +328,7 @@ export class GameScene extends Phaser.Scene {
       score: this.scoreKeeper.score,
       bestScore: getBestScore(),
       onRestart: () => this.resetAndRestart(),
+      onHome: () => this.goToMenu(),
     });
   }
 

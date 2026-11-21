@@ -11,8 +11,30 @@ export type TypingAction =
   | { kind: 'char'; char: string }
   | { kind: 'pause' };
 
-/** Разрешённые символы: латиница, кириллица, цифры. */
-const ALLOWED_CHAR = /^[a-zа-я0-9]$/;
+/** Класс символов по умолчанию: латиница, кириллица, цифры, нижний регистр. */
+const DEFAULT_ALLOWED = 'a-zа-я0-9';
+
+/** Буквы, которые принимает строгий режим: оба регистра выбранного алфавита. */
+const LETTER_CLASSES = {
+  ru: 'а-яёА-ЯЁ',
+  en: 'a-zA-Z',
+} as const;
+
+/** Экранирует символы, которые нельзя вставлять в класс символов regex как есть. */
+function escapeCharClass(chars: string): string {
+  return chars.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
+}
+
+export interface TypingInputOptions {
+  /** Разрешить пробел — нужно для фраз. */
+  allowSpace?: boolean;
+  /** Сохранять регистр клавиши — нужно для заглавных букв. */
+  keepCase?: boolean;
+  /** Алфавит строгого режима, по умолчанию русский. */
+  letters?: keyof typeof LETTER_CLASSES;
+  /** Дополнительные разрешённые символы, например знаки препинания. */
+  extraChars?: string;
+}
 
 export const INPUT_LINE_Y = 590;
 const INPUT_TEXT_X = 28;
@@ -28,7 +50,18 @@ export class TypingInput {
   private inputText: Phaser.GameObjects.Text;
   private cursorText: Phaser.GameObjects.Text;
 
-  constructor(scene: Phaser.Scene) {
+  private readonly allowSpace: boolean;
+  private readonly keepCase: boolean;
+  private readonly allowedChar: RegExp;
+
+  constructor(scene: Phaser.Scene, options: TypingInputOptions = {}) {
+    this.allowSpace = options.allowSpace ?? false;
+    this.keepCase = options.keepCase ?? false;
+    const letters = LETTER_CLASSES[options.letters ?? 'ru'];
+    this.allowedChar = new RegExp(
+      `^[${this.keepCase ? letters : DEFAULT_ALLOWED}${escapeCharClass(options.extraChars ?? '')}]$`,
+    );
+
     const { width } = scene.scale;
 
     scene.add
@@ -86,10 +119,14 @@ export class TypingInput {
       event.preventDefault();
       return { kind: 'pause' };
     }
+    if (key === ' ' && this.allowSpace) {
+      event.preventDefault();
+      return { kind: 'char', char: ' ' };
+    }
     if (key.length !== 1) return null;
 
-    const char = key.toLowerCase();
-    if (!ALLOWED_CHAR.test(char)) return null;
+    const char = this.keepCase ? key : key.toLowerCase();
+    if (!this.allowedChar.test(char)) return null;
 
     event.preventDefault();
     return { kind: 'char', char };

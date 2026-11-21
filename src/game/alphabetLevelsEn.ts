@@ -1,0 +1,66 @@
+/**
+ * Данные режима «Азбука» для английской раскладки: 50 уровней по
+ * той же схеме, что и русские (алфавитная тренировка по рядам клавиатуры).
+ *
+ * Цели печатаются в английской раскладке; точка с запятой — часть целей
+ * уровней 4, 31, 32, 47, 48.
+ */
+import type { AlphabetLevelConfig } from './alphabetLevels';
+
+export const ALPHABET_LEVELS_EN: AlphabetLevelConfig[] = [
+  { id: 1, title: 'F и J', targets: ['fj', 'jf', 'ff', 'jj'], requiredClicks: 200 },
+  { id: 2, title: 'D и K', targets: ['dk', 'kd', 'fd', 'jk'], requiredClicks: 200 },
+  { id: 3, title: 'S и L', targets: ['sl', 'ls', 'ds', 'kl'], requiredClicks: 200 },
+  { id: 4, title: 'A и ;', targets: ['a;', ';a', 'sa', 'l;'], requiredClicks: 200 },
+  { id: 5, title: 'G и H', targets: ['gh', 'hg', 'fg', 'hj'], requiredClicks: 200 },
+  { id: 6, title: 'Повтор home row', targets: ['fj', 'dk', 'sl', 'a;', 'gh'], requiredClicks: 150 },
+  { id: 7, title: 'E и I', targets: ['ei', 'ie', 'ed', 'ik'], requiredClicks: 200 },
+  { id: 8, title: 'R и U', targets: ['ru', 'ur', 'er', 'ui'], requiredClicks: 200 },
+  { id: 9, title: 'T и Y', targets: ['ty', 'yt', 'tr', 'yu'], requiredClicks: 200 },
+  { id: 10, title: 'Q и W', targets: ['qw', 'wq', 'qt', 'wy'], requiredClicks: 200 },
+  { id: 11, title: 'O и P', targets: ['op', 'po', 'oe', 'pw'], requiredClicks: 200 },
+  { id: 12, title: 'Повтор top row', targets: ['ei', 'ru', 'ty', 'qw', 'op'], requiredClicks: 150 },
+  { id: 13, title: 'Home + top', targets: ['fe', 'jr', 'du', 'ki', 'sl'], requiredClicks: 150 },
+  { id: 14, title: 'V и B', targets: ['vb', 'bv', 'vf', 'bj'], requiredClicks: 200 },
+  { id: 15, title: 'N и M', targets: ['nm', 'mn', 'nv', 'mb'], requiredClicks: 200 },
+  { id: 16, title: 'C и X', targets: ['cx', 'xc', 'cd', 'xm'], requiredClicks: 200 },
+  { id: 17, title: 'Z', targets: ['zx', 'zc', 'zv', 'za'], requiredClicks: 150 },
+  { id: 18, title: 'Повтор bottom row', targets: ['vb', 'nm', 'cx', 'zx'], requiredClicks: 150 },
+  { id: 19, title: 'Home + bottom', targets: ['fv', 'jb', 'dn', 'km', 'sc'], requiredClicks: 150 },
+  { id: 20, title: 'Top + bottom', targets: ['ev', 'ib', 'rn', 'um', 'tc'], requiredClicks: 150 },
+  { id: 21, title: 'Все ряды в парах', targets: ['fj', 'ei', 'vb', 'nm'], requiredClicks: 120 },
+  { id: 22, title: 'Левая и правая рука', targets: ['fq', 'jp', 'dr', 'ks', 'al'], requiredClicks: 120 },
+  { id: 23, title: 'Верх и низ', targets: ['fv', 'jn', 'de', 'ki', 'st'], requiredClicks: 120 },
+  { id: 24, title: 'Гласные парами', targets: ['ae', 'io', 'ou', 'ey'], requiredClicks: 120 },
+  { id: 25, title: 'Согласные парами', targets: ['fj', 'dk', 'sl', 'gh'], requiredClicks: 120 },
+  { id: 26, title: 'Частые слоги из 2 букв', targets: ['as', 'at', 'in', 'on', 'it'], requiredClicks: 100 },
+  { id: 27, title: 'Частые слоги из 3 букв', targets: ['the', 'and', 'ing', 'for'], requiredClicks: 100 },
+  { id: 28, title: 'Короткие слова', targets: ['an', 'is', 'to', 'do', 'go'], requiredClicks: 100 },
+  { id: 29, title: 'Слова 4-5 букв', targets: ['this', 'that', 'with', 'have'], requiredClicks: 80 },
+  { id: 30, title: 'Пары с пробелом', targets: ['fj dk', 'sl a;', 'gh ei'], requiredClicks: 80 },
+  { id: 31, title: 'Заглавные буквы', targets: ['Fj', 'Dk', 'Sl', 'A;'], requiredClicks: 80 },
+  { id: 32, title: 'Знаки препинания', targets: ['fj,', 'dk.', 'sl!', 'a;?'], requiredClicks: 80 },
+  { id: 33, title: 'Повтор E/I', targets: ['ei', 'ie', 'ed', 'ik'], requiredClicks: 100 },
+  { id: 34, title: 'Повтор R/U', targets: ['ru', 'ur', 'er', 'ui'], requiredClicks: 100 },
+  { id: 35, title: 'Повтор T/Y', targets: ['ty', 'yt', 'tr', 'yu'], requiredClicks: 100 },
+  { id: 36, title: 'Повтор Q/W', targets: ['qw', 'wq', 'qt', 'wy'], requiredClicks: 100 },
+  { id: 37, title: 'Повтор O/P', targets: ['op', 'po', 'oe', 'pw'], requiredClicks: 100 },
+  { id: 38, title: 'Повтор V/B', targets: ['vb', 'bv', 'vf', 'bj'], requiredClicks: 100 },
+  { id: 39, title: 'Повтор N/M', targets: ['nm', 'mn', 'nv', 'mb'], requiredClicks: 100 },
+  { id: 40, title: 'Повтор C/X', targets: ['cx', 'xc', 'cd', 'xm'], requiredClicks: 100 },
+  { id: 41, title: 'Повтор Z', targets: ['zx', 'zc', 'zv', 'za'], requiredClicks: 100 },
+  { id: 42, title: 'Смешанные редкие пары', targets: ['qz', 'xj', 'vk', 'wp'], requiredClicks: 100 },
+  { id: 43, title: 'Слова home row', targets: ['as', 'ask', 'fall', 'hall'], requiredClicks: 80 },
+  { id: 44, title: 'Слова top row', targets: ['we', 'you', 'it', 'tree'], requiredClicks: 80 },
+  { id: 45, title: 'Слова bottom row', targets: ['can', 'man', 'van', 'mix'], requiredClicks: 80 },
+  { id: 46, title: 'Короткие фразы', targets: ['as is', 'it is', 'we do'], requiredClicks: 80 },
+  { id: 47, title: 'Заглавные и пробел', targets: ['Fj Dk', 'Sl A;'], requiredClicks: 80 },
+  { id: 48, title: 'Пунктуация и пробел', targets: ['fj, dk.', 'sl! a;?'], requiredClicks: 80 },
+  { id: 49, title: 'Все буквы в парах', targets: ['fj', 'ei', 'vb', 'nm', 'qz'], requiredClicks: 120 },
+  {
+    id: 50,
+    title: 'Финал',
+    targets: ['fj', 'ei', 'vb', 'nm', 'qz', 'as is', 'it is', 'Fj', 'Dk', 'dk.', 'sl!'],
+    requiredClicks: 150,
+  },
+];
