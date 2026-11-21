@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { AlphabetLevelsScene } from './AlphabetLevelsScene';
+import { AlphabetScene } from './AlphabetScene';
 import { GameScene } from './GameScene';
 import { MenuScene } from './MenuScene';
 import { SettingsScene } from './SettingsScene';
@@ -11,7 +13,7 @@ export function createGame(parent: string): Phaser.Game {
     width: 960,
     height: 640,
     backgroundColor: getCanvasBackground(),
-    scene: [MenuScene, SettingsScene, GameScene],
+    scene: [MenuScene, SettingsScene, GameScene, AlphabetLevelsScene, AlphabetScene],
     scale: {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,

@@ -10,7 +10,7 @@ const TITLE = 'Печатай и стреляй';
 const HINT = 'Печатай слово — монстр умрёт. Мигающие слова — обманки, не печатай!';
 
 const MODE_DEFENSE = '🏰 Оборона базы';
-const MODE_ALPHABET = '🔤 Азбука · скоро';
+const MODE_ALPHABET = '🔤 Азбука';
 const MODE_JUMP = '🍄 Буквопрыг · скоро';
 
 const SETTINGS_LABEL = 'Настройки';
@@ -52,13 +52,15 @@ export class MenuScene extends Phaser.Scene {
       onPress: () => this.startGame(),
     });
 
-    // Режимы-заглушки: выглядят как кнопки, но не кликабельны.
-    createPlaceholderButton(this, centerX, FIRST_MODE_Y + BUTTON_HEIGHT + MODE_BUTTON_GAP, {
+    // «Азбука» — выбор уровня режима.
+    createButton(this, centerX, FIRST_MODE_Y + BUTTON_HEIGHT + MODE_BUTTON_GAP, {
       label: MODE_ALPHABET,
       width: BUTTON_WIDTH,
       height: BUTTON_HEIGHT,
+      onPress: () => this.openAlphabetLevels(),
     });
 
+    // Режим-заглушка: выглядит как кнопка, но не кликабельна.
     createPlaceholderButton(
       this,
       centerX,
@@ -80,6 +82,10 @@ export class MenuScene extends Phaser.Scene {
 
   private startGame(): void {
     this.scene.start('GameScene');
+  }
+
+  private openAlphabetLevels(): void {
+    this.scene.start('AlphabetLevelsScene');
   }
 
   private openSettings(): void {
