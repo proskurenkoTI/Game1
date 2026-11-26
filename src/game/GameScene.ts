@@ -1,33 +1,40 @@
 import Phaser from 'phaser';
-import { BASE_Y, FINAL_WAVE, START_LIVES } from './gameConfig';
+import { BOMB_RADIUS, BASE_Y, MAX_LIVES, START_LIVES } from './gameConfig';
 import {
+  attachShield,
   createMonster,
   destroyMonster,
+  detachProtectedTarget,
   findByPrefix,
+  isShielded,
   matchesTyped,
   refreshWord,
+  releaseShield,
   shiftTypingStartedAt,
   stepMonster,
   type Monster,
 } from './monsters';
-import { getBestScore, rememberBestScore, ScoreKeeper } from './scoring';
+import { getBestScore, rememberBestScore, ScoreKeeper, type WordAward } from './scoring';
 import { createBase } from './stage';
 import {
   playCombo,
   playDamage,
   playDefeat,
+  playExplosion,
+  playHeal,
   playKill,
   playPause,
   playResume,
+  playShieldBlock,
   playTrapWarning,
   playTypo,
-  playVictory,
   playWaveStart,
 } from './sound';
 import { Hud, type HudSnapshot } from './hud';
 import { TypingInput } from './typingInput';
 import { Feedback } from './feedback';
 import { EndScreen, type EndReason } from './endScreen';
+import { HowToPlayScreen } from './howToPlayScreen';
 import { PauseScreen } from './pauseScreen';
 import { WaveRunner } from './waves';
 import { TEXT_COLORS, applyCanvasTheme } from './theme';
@@ -45,6 +52,7 @@ import { TEXT_COLORS, applyCanvasTheme } from './theme';
  *  typingInput — строка ввода и разбор клавиш
  *  feedback    — всплывающие очки, баннер волны, вспышки камеры
  *  stage       — декорации (линия базы)
+ *  howToPlayScreen — стартовая инструкция
  *  pauseScreen — экран паузы
  *  endScreen   — экран победы / поражения
  *  sound       — синтезированные сигналы
@@ -65,6 +73,9 @@ export class GameScene extends Phaser.Scene {
   private feedback!: Feedback;
   private endScreen: EndScreen | null = null;
   private pauseScreen: PauseScreen | null = null;
+  private introScreen: HowToPlayScreen | null = null;
+  private waitingForStart = false;
+  private skipIntro = false;
 
   constructor() {
     super('GameScene');
@@ -77,15 +88,18 @@ export class GameScene extends Phaser.Scene {
    * старте из меню, и при рестарте. Инициализаторы полей конструктора
    * повторно не отрабатывают, поэтому состояние партии сбрасываем здесь.
    */
-  init(): void {
+  init(data?: { skipIntro?: boolean }): void {
     this.monsters = [];
     this.lives = START_LIVES;
     this.gameOver = false;
     this.paused = false;
     this.pausedAt = 0;
+    this.skipIntro = data?.skipIntro === true;
+    this.waitingForStart = false;
     this.scoreKeeper.reset();
     this.endScreen = null;
     this.pauseScreen = null;
+    this.introScreen = null;
   }
 
   create(): void {
@@ -95,11 +109,16 @@ export class GameScene extends Phaser.Scene {
       onHome: () => this.goToMenu(),
     });
     this.feedback = new Feedback(this);
-    this.typing = new TypingInput(this);
+    this.typing = new TypingInput(this, { allowSpace: true });
     this.typing.onChange = () => this.refreshAllWords();
     createBase(this);
     this.setupInput();
-    this.startWave(1);
+    // Рестарт партии («Ещё» на экране итогов) не должен показывать инструкцию.
+    if (this.skipIntro) {
+      this.startGame();
+    } else {
+      this.showIntro();
+    }
   }
 
   private setupInput(): void {
@@ -110,17 +129,36 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    if (this.gameOver || this.paused) return;
+    if (this.gameOver || this.paused || this.waitingForStart) return;
     if (this.waveRunner.tick(delta, this.monsters.length)) {
       this.spawnMonster();
     }
     this.stepMonsters(delta);
   }
 
+  // ── Стартовая инструкция ──────────────────────────────────────────
+
+  /**
+   * Показывает правила и морозит партию: спавн, движение и набор слова
+   * недоступны, пока игрок не нажмёт «В бой».
+   */
+  private showIntro(): void {
+    this.waitingForStart = true;
+    this.introScreen = new HowToPlayScreen(this, () => this.startGame());
+  }
+
+  /** Убирает инструкцию и запускает первую волну. */
+  private startGame(): void {
+    this.waitingForStart = false;
+    this.introScreen?.destroy();
+    this.introScreen = null;
+    this.startWave(1);
+  }
+
   // ── Пауза ─────────────────────────────────────────────────────────
 
   private togglePause(): void {
-    if (this.gameOver) return;
+    if (this.gameOver || this.waitingForStart) return;
     if (this.paused) {
       this.resume();
     } else {
@@ -155,7 +193,7 @@ export class GameScene extends Phaser.Scene {
   // ── Ввод ──────────────────────────────────────────────────────────
 
   private onKeyDown(event: KeyboardEvent): void {
-    if (this.gameOver) return;
+    if (this.gameOver || this.waitingForStart) return;
 
     const action = this.typing.readAction(event);
     if (!action) return;
@@ -189,8 +227,14 @@ export class GameScene extends Phaser.Scene {
     if (normal) {
       this.typing.setValue(attempt);
       if (normal.firstTypedAt === null) normal.firstTypedAt = this.time.now;
+
       if (attempt === normal.word) {
-        this.killMonster(normal);
+        // Щит не даёт убить прикрываемого: набираем, но не засчитываем.
+        if (isShielded(normal)) {
+          this.blockedByShield(normal);
+        } else {
+          this.killMonster(normal, false);
+        }
       }
       return;
     }
@@ -201,8 +245,14 @@ export class GameScene extends Phaser.Scene {
   // ── Монстры ───────────────────────────────────────────────────────
 
   private spawnMonster(): void {
-    const monster = createMonster(this, this.waveRunner.config, this.monsters.map(m => m.word));
-    if (monster.isTrap) playTrapWarning();
+    const monster = createMonster(this, this.waveRunner.config, this.monsters);
+
+    if (monster.isTrap) {
+      playTrapWarning();
+    } else if (monster.kind === 'shield') {
+      attachShield(monster, this.monsters);
+    }
+
     this.monsters.push(monster);
     this.waveRunner.onSpawned();
   }
@@ -216,19 +266,93 @@ export class GameScene extends Phaser.Scene {
     for (const m of reached) this.monsterReachedBase(m);
   }
 
-  private killMonster(monster: Monster): void {
-    const award = this.scoreKeeper.awardWord(this.time.now, monster.firstTypedAt);
+  /**
+   * Уничтожает монстра.
+   * @param chained true — монстра снял чужой взрыв (цепь не запускаем).
+   */
+  private killMonster(monster: Monster, chained: boolean): void {
+    const award = chained
+      ? this.scoreKeeper.awardChainKill()
+      : this.scoreKeeper.awardWord(this.time.now, monster.firstTypedAt);
+
+    this.showAward(monster, award, chained);
+    this.applyKillEffect(monster, award);
+    if (!chained) this.typing.clear();
+    this.removeMonster(monster);
+
+    if (monster.kind === 'bomb' && !chained) {
+      this.detonate(monster);
+    }
+  }
+
+  /** Начисленные очки + отдельная строка за комбо/лечение. */
+  private showAward(monster: Monster, award: WordAward, chained: boolean): void {
+    const parts = [`+${award.points}`];
+    if (award.comboBonus > 0) parts.push(`комбо +${award.comboBonus}`);
+    if (award.lifeBonus) parts.push('серия 5: +1 жизнь');
+
     this.feedback.floatingText(
       monster.x,
       monster.y,
-      `+${award.points}${award.comboBonus > 0 ? `  комбо +${award.comboBonus}` : ''}`,
-      TEXT_COLORS.success,
+      parts.join('  '),
+      chained ? TEXT_COLORS.muted : TEXT_COLORS.success,
     );
     playKill();
     if (award.comboBonus > 0) playCombo();
+  }
 
+  /** Эффект от смерти конкретного типа. */
+  private applyKillEffect(monster: Monster, award: WordAward): void {
+    if (monster.kind === 'healer') {
+      this.gainLife();
+      playHeal();
+    } else if (award.lifeBonus) {
+      this.gainLife();
+      playHeal();
+    }
+  }
+
+  /** Взрыв бомбы: снимает всех живых целей в радиусе, кроме обманок. */
+  private detonate(bomb: Monster): void {
+    const caught = this.monsters.filter(
+      (m) =>
+        !m.isTrap &&
+        m.kind !== 'bomb' &&
+        Phaser.Math.Distance.Between(bomb.x, bomb.y, m.x, m.y) <= BOMB_RADIUS,
+    );
+
+    this.feedback.explosion(bomb.x, bomb.y, BOMB_RADIUS);
+    playExplosion();
+
+    for (const target of caught) {
+      // Взрыв не пробивает щит — прикрываемый уходит под защиту.
+      if (isShielded(target)) continue;
+      this.killMonster(target, true);
+    }
+  }
+
+  /** Возврат жизни: лечебный монстр или серия из 5 точных убийств. */
+  private gainLife(): void {
+    if (this.lives >= MAX_LIVES) {
+      this.feedback.floatingText(
+        this.scale.width / 2,
+        BASE_Y - 60,
+        'Жизней уже максимум',
+        TEXT_COLORS.muted,
+      );
+      return;
+    }
+    this.lives += 1;
+    this.feedback.healFlash();
+    this.hud.update(this.takeSnapshot());
+  }
+
+  /** Слово набрано, но монстра прикрывает щит — набор сгорает, серия целая. */
+  private blockedByShield(monster: Monster): void {
     this.typing.clear();
-    this.removeMonster(monster);
+    this.feedback.shieldFlash();
+    playShieldBlock();
+    this.feedback.floatingText(monster.x, monster.y, '🛡️ Щит держит!', TEXT_COLORS.accent);
   }
 
   private triggerTrap(monster: Monster): void {
@@ -275,6 +399,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private removeMonster(monster: Monster): void {
+    // Погиб щит — сосед снова уязвим. Погиб прикрываемый — щит теряет цель.
+    if (monster.protectedMonster) releaseShield(monster);
+    else detachProtectedTarget(monster);
+
     this.monsters = this.monsters.filter(m => m !== monster);
     destroyMonster(monster);
     this.waveRunner.onResolved();
@@ -294,7 +422,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Полный сброс партии: вызывается кнопкой «Ещё» на экране итогов. */
   private resetAndRestart(): void {
-    this.scene.restart();
+    this.scene.restart({ skipIntro: true });
   }
 
   /** Возврат в главное меню кнопкой «Домой» на HUD. */
@@ -302,16 +430,16 @@ export class GameScene extends Phaser.Scene {
     this.scene.start('MenuScene');
   }
 
+  /**
+   * Волны бесконечны: игра заканчивается только когда кончатся жизни.
+   * Каждая следующая волна чуть плотнее предыдущей.
+   */
   private checkWaveEnd(): void {
     if (this.gameOver) return;
     if (this.lives <= 0) return;
     if (!this.waveRunner.isFinished(this.monsters.length)) return;
 
-    if (this.waveRunner.wave >= FINAL_WAVE) {
-      this.endGame('win');
-    } else {
-      this.startWave(this.waveRunner.wave + 1);
-    }
+    this.startWave(this.waveRunner.wave + 1);
   }
 
   // ── Конец игры ────────────────────────────────────────────────────
@@ -321,11 +449,11 @@ export class GameScene extends Phaser.Scene {
     this.gameOver = true;
     this.closePause();
     rememberBestScore(this.scoreKeeper.score);
-    if (reason === 'win') playVictory();
-    else playDefeat();
+    playDefeat();
     this.endScreen = new EndScreen(this, {
       reason,
       score: this.scoreKeeper.score,
+      wave: this.waveRunner.wave,
       bestScore: getBestScore(),
       onRestart: () => this.resetAndRestart(),
       onHome: () => this.goToMenu(),
@@ -344,6 +472,8 @@ export class GameScene extends Phaser.Scene {
       wave: this.waveRunner.wave,
       remaining: this.waveRunner.remaining(),
       lives: this.lives,
+      maxLives: MAX_LIVES,
+      combo: this.scoreKeeper.combo,
       score: this.scoreKeeper.score,
     };
   }

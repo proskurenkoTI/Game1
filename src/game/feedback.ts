@@ -63,4 +63,36 @@ export class Feedback {
   errorFlash(): void {
     this.scene.cameras.main.flash(80, 255, 200, 200);
   }
+
+  /** Вспышка щита — удар по прикрываемому монстру отбит. */
+  shieldFlash(): void {
+    this.scene.cameras.main.flash(120, 90, 160, 255);
+  }
+
+  /**
+   * Кольцо взрыва бомбы: расходящаяся окружность, показывающая радиус
+   * поражения, чтобы игрок понимал, кого зацепило.
+   */
+  explosion(x: number, y: number, radius: number): void {
+    const ring = this.scene.add
+      .circle(x, y, radius * 0.35, 0xffffff, 0)
+      .setStrokeStyle(6, 0xffb347, 0.9)
+      .setDepth(FLOATING_DEPTH);
+
+    this.scene.tweens.add({
+      targets: ring,
+      scale: radius / (radius * 0.35),
+      alpha: 0,
+      duration: 380,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+
+    this.scene.cameras.main.shake(120, 0.006);
+  }
+
+  /** Тёплая зелёная вспышка — возвращена жизнь. */
+  healFlash(): void {
+    this.scene.cameras.main.flash(200, 80, 255, 140);
+  }
 }

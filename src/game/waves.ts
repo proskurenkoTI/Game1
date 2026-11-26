@@ -1,6 +1,7 @@
 /**
  * Прогресс волны: сколько монстров породили, сколько разобрали,
  * когда можно спавнить следующего и закончена ли волна.
+ * Волны бесконечны — конечного номера нет, условия только внутри волны.
  */
 import { FIRST_SPAWN_DELAY_MS, SPAWN_COOLDOWN_MS, getWaveConfig, type WaveConfig } from './gameConfig';
 
@@ -12,6 +13,7 @@ export class WaveRunner {
 
   private cooldown = 0;
 
+  /** Запускает волну с указанным номером (нумерация с 1, без верхней границы). */
   start(wave: number): void {
     this.wave = wave;
     this.config = getWaveConfig(wave);

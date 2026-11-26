@@ -45,3 +45,35 @@ export function randomWord(minLen: number, maxLen: number, activeWords: string[]
   const pool = candidates.length > 0 ? candidates : inRange.length > 0 ? inRange : WORDS;
   return pool[Math.floor(Math.random() * pool.length)];
 }
+
+/**
+ * Слово задом наперёд — именно его печатает игрок у монстра-анаграммы.
+ * Возвращает null, если переворот ничего не меняет (палиндром) —
+ * тогда задание «наоборот» бессмысленно и анаграмму не выпускаем.
+ */
+export function reverseWord(word: string): string | null {
+  const reversed = [...word].reverse().join('');
+  return reversed === word ? null : reversed;
+}
+
+/**
+ * Составная цель: два слова, которые печатают подряд через пробел —
+ * например «огонь лёд». Возвращает null, если не удалось подобрать
+ * пару без конфликтов с активными словами.
+ */
+export function randomComposite(
+  minLen: number,
+  maxLen: number,
+  activeWords: string[],
+): string | null {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const first = randomWord(minLen, maxLen, activeWords);
+    const second = randomWord(minLen, maxLen, [...activeWords, first]);
+    const composite = `${first} ${second}`;
+    const conflicts = activeWords.some(
+      (active) => composite.startsWith(active) || active.startsWith(composite),
+    );
+    if (!conflicts && first !== second) return composite;
+  }
+  return null;
+}

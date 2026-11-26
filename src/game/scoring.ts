@@ -4,6 +4,7 @@
  */
 import {
   COMBO_STREAK,
+  HEAL_STREAK,
   SCORE_COMBO,
   SCORE_SPEED,
   SCORE_WORD,
@@ -15,6 +16,8 @@ export interface WordAward {
   points: number;
   /** Разовый бонус за серию, 0 если серии не было. */
   comboBonus: number;
+  /** Серия достигла порога — игрок получает дополнительную жизнь. */
+  lifeBonus: boolean;
 }
 
 export class ScoreKeeper {
@@ -31,14 +34,27 @@ export class ScoreKeeper {
     this.score += points;
     this.combo += 1;
 
+    // Бонус за серию выдаём ровно один раз — на третьем слове подряд.
     let comboBonus = 0;
-    if (this.combo >= COMBO_STREAK) {
+    if (this.combo === COMBO_STREAK) {
       comboBonus = SCORE_COMBO;
       this.score += comboBonus;
+    }
+
+    // Пять точных убийств подряд — возвращаем жизнь и обнуляем серию.
+    let lifeBonus = false;
+    if (this.combo >= HEAL_STREAK) {
+      lifeBonus = true;
       this.combo = 0;
     }
 
-    return { points, comboBonus };
+    return { points, comboBonus, lifeBonus };
+  }
+
+  /** Очки за монстра, убитого цепным взрывом бомбы. Комбо не продвигается. */
+  awardChainKill(): WordAward {
+    this.score += SCORE_WORD;
+    return { points: SCORE_WORD, comboBonus: 0, lifeBonus: false };
   }
 
   /** Серия прерывается любой ошибкой. */
