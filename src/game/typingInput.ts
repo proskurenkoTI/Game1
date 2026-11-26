@@ -58,8 +58,9 @@ export class TypingInput {
     this.allowSpace = options.allowSpace ?? false;
     this.keepCase = options.keepCase ?? false;
     const letters = LETTER_CLASSES[options.letters ?? 'ru'];
+    const extra = options.extraChars ?? '';
     this.allowedChar = new RegExp(
-      `^[${this.keepCase ? letters : DEFAULT_ALLOWED}${escapeCharClass(options.extraChars ?? '')}]$`,
+      `^[${this.keepCase ? letters : DEFAULT_ALLOWED}${escapeCharClass(extra)}]$`,
     );
 
     const { width } = scene.scale;

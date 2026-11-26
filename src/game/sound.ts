@@ -113,3 +113,22 @@ export function playVictory(): void {
 export function playDefeat(): void {
   playTone(200, 0.3, 'sawtooth');
 }
+
+/** Взрыв бомбы: низкий шум + короткий тон. */
+export function playExplosion(): void {
+  playTone(60, 0.4, 'sawtooth', 0.2);
+  playTone(90, 0.2, 'square', 0.1, 0.05);
+}
+
+/** Лечение: быстрая восходящая последовательность. */
+export function playHeal(): void {
+  playTone(523, 0.08, 'sine', 0.12);
+  playTone(659, 0.08, 'sine', 0.12, 0.08);
+  playTone(784, 0.12, 'sine', 0.12, 0.16);
+}
+
+/** Щит отбил атаку: короткий металлический звон. */
+export function playShieldBlock(): void {
+  playTone(1200, 0.06, 'square', 0.08);
+  playTone(1800, 0.04, 'sine', 0.06, 0.03);
+}

@@ -6,11 +6,13 @@ import Phaser from 'phaser';
 import { SHAPE_COLORS, TEXT_COLORS, uiText } from './theme';
 import { createButton } from './uiButton';
 
-export type EndReason = 'win' | 'lose';
+export type EndReason = 'lose';
 
 export interface EndScreenData {
   reason: EndReason;
   score: number;
+  /** На какой волне остановились — полезно при бесконечных волнах. */
+  wave: number;
   bestScore: number;
   onRestart: () => void;
   onHome: () => void;
@@ -25,7 +27,6 @@ const BUTTONS_Y = 130;
 const OVERLAY_ALPHA = 0.88;
 
 const COPY: Record<EndReason, { title: string; subtitle: string }> = {
-  win: { title: 'Победа!', subtitle: 'Все волны пройдены!' },
   lose: { title: 'Игра окончена', subtitle: 'Монстры добрались до базы.' },
 };
 
@@ -54,7 +55,12 @@ export class EndScreen {
       .setOrigin(0.5);
 
     const scoreText = scene.add
-      .text(width / 2, centerY + 10, `Счёт: ${data.score}`, uiText('28px', TEXT_COLORS.bright, true))
+      .text(
+        width / 2,
+        centerY + 10,
+        `Счёт: ${data.score}  ·  Волна: ${data.wave}`,
+        uiText('28px', TEXT_COLORS.bright, true),
+      )
       .setOrigin(0.5);
 
     const bestText = scene.add
